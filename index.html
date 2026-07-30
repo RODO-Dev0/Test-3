@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KurdPirate — Admin</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%235B8DEF'/%3E%3Ctext x='50' y='68' font-size='55' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='800'%3EK%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<!--
+====================================================================
+ ONE-TIME SUPABASE SETUP — run once in Supabase's SQL Editor.
+====================================================================
+
+  -- 1) Table storing each movie's info
+  create table movies (
+    id bigint generated always as identity primary key,
+    title text not null,
+    description text not null,
+    genre text,
+    year int,
+    poster_url text,
+    video_url text,
+    created_at timestamptz default now()
+  );
+
+  alter table movies enable row level security;
+
+  create policy "Public read" on movies
+    for select using (true);
+
+  create policy "Authenticated write" on movies
+    for all using (auth.role() = 'authenticated')
+    with check (auth.role() = 'authenticated');
+
+  -- 2) Storage buckets (Dashboard → Storage → New bucket):
+  --      "posters"  → Public bucket: ON
+  --      "videos"   → Public bucket: ON   (fine for a small demo catalogue;
+  --                    for real distribution, a dedicated video host is better)
+
+  -- 3) Storage access rules (SQL Editor) — lets anyone view files,
+  --    but only logged-in users can upload/replace/delete them:
+  create policy "Public read files" on storage.objects
+    for select using (bucket_id in ('posters','videos'));
+
+  create policy "Authenticated upload" on storage.objects
+    for insert with check (bucket_id in ('posters','videos') and auth.role() = 'authenticated');
+
+  create policy "Authenticated update" on storage.objects
+    for update using (bucket_id in ('posters','videos') and auth.role() = 'authenticated');
+
+  create policy "Authenticated delete" on storage.objects
+    for delete using (bucket_id in ('posters','videos') and auth.role() = 'authenticated');
+
+  -- 4) Create yourself a login: Authentication → Users → Add user
+====================================================================
+-->
+<style>
+:root{
+  --bg:#0B0E14;
+  --bg-elevated:#10141C;
+  --bg-card:#151A24;
+  --border:#232936;
+  --border-soft:#1B212C;
+  --text:#F3F5F8;
+  --text-dim:#8891A3;
+  --accent:#5B8DEF;
+  --accent-soft:rgba(91,141,239,.14);
+  --success:#3FCF8E;
+  --danger:#F0654F;
+  --radius:16px;
+  --font-display:'Outfit',sans-serif;
+  --font-body:'Work Sans',sans-serif;
+  --shadow:0 20px 44px -20px rgba(0,0,0,.55);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:var(--font-body);min-height:100vh;}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;}
+input,textarea,select{font-family:inherit;}
+a{color:inherit;text-decoration:none;}
+::selection{background:var(--accent);color:#fff;}
+::-webkit-scrollbar{width:8px;height:8px;}
+::-webkit-scrollbar-thumb{background:#2A3140;border-radius:8px;}
+.hidden{display:none !important;}
+
+/* ---------- buttons ---------- */
+.btn{display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:10px;font-weight:600;font-size:.88rem;transition:all .15s ease;}
+.btn-primary{background:var(--accent);color:#fff;box-shadow:0 8px 20px -8px rgba(91,141,239,.6);}
+.btn-primary:hover{filter:brightness(1.08);transform:translateY(-1px);}
+.btn-primary:disabled{opacity:.6;cursor:not-allowed;transform:none;}
+.btn-outline{background:var(--bg-card);border:1px solid var(--border);color:var(--text);}
+.btn-outline:hover{border-color:var(--accent);color:var(--accent);}
+.btn-danger-ghost{background:rgba(240,101,79,.1);border:1px solid rgba(240,101,79,.3);color:var(--danger);}
+.btn-icon{width:34px;height:34px;border-radius:9px;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text-dim);display:flex;align-items:center;justify-content:center;font-size:.82rem;}
+.btn-icon:hover{color:var(--accent);border-color:var(--accent);}
+.btn-icon.danger:hover{color:var(--danger);border-color:var(--danger);}
+
+/* ---------- auth screens ---------- */
+.center-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
+  background:radial-gradient(circle at 20% 20%, rgba(91,141,239,.10), transparent 45%), var(--bg);}
+.auth-card{width:100%;max-width:400px;background:var(--bg-card);border:1px solid var(--border);border-radius:20px;box-shadow:var(--shadow);padding:36px;}
+.auth-card .logo{width:46px;height:46px;border-radius:13px;background:linear-gradient(135deg,var(--accent),#8AB4FF);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:800;margin-bottom:18px;}
+.auth-card h1{font-family:var(--font-display);font-size:1.4rem;margin-bottom:6px;}
+.auth-card p.sub{color:var(--text-dim);font-size:.86rem;margin-bottom:24px;line-height:1.5;}
+.field{margin-bottom:15px;}
+.field label{display:block;font-size:.8rem;font-weight:600;color:var(--text-dim);margin-bottom:6px;}
+.field input,.field textarea,.field select{
+  width:100%;background:var(--bg-elevated);border:1px solid var(--border);border-radius:10px;
+  padding:11px 13px;color:var(--text);font-size:.9rem;transition:border-color .15s;
+}
+.field input:focus,.field textarea:focus,.field select:focus{outline:none;border-color:var(--accent);}
+.field .hint{color:var(--text-dim);font-size:.76rem;margin-top:5px;}
+.field-error{color:var(--danger);font-size:.78rem;margin-top:5px;display:none;}
+.field.error input{border-color:var(--danger);}
+.field.error .field-error{display:block;}
+
+/* ---------- shell / tabs ---------- */
+.shell{min-height:100vh;}
+.topbar{background:var(--bg-elevated);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50;}
+.topbar-inner{max-width:1200px;margin:0 auto;padding:0 28px;display:flex;align-items:center;gap:8px;height:66px;}
+.brand{display:flex;align-items:center;gap:10px;font-family:var(--font-display);font-weight:700;font-size:1.05rem;margin-right:20px;flex-shrink:0;}
+.brand .logo{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,var(--accent),#8AB4FF);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.85rem;}
+.tabs{display:flex;gap:4px;flex:1;}
+.tab-btn{padding:10px 16px;border-radius:9px;font-weight:600;font-size:.87rem;color:var(--text-dim);display:flex;align-items:center;gap:8px;}
+.tab-btn:hover{color:var(--text);background:var(--bg-card);}
+.tab-btn.active{color:var(--text);background:var(--accent-soft);}
+.tab-btn.active i{color:var(--accent);}
+.user-chip{display:flex;align-items:center;gap:10px;margin-left:auto;}
+.user-chip .email{color:var(--text-dim);font-size:.82rem;}
+.container{max-width:1200px;margin:0 auto;padding:32px 28px 60px;}
+
+/* ---------- dashboard ---------- */
+.page-head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:26px;flex-wrap:wrap;gap:14px;}
+.page-head h1{font-family:var(--font-display);font-size:1.5rem;}
+.page-head p{color:var(--text-dim);font-size:.88rem;margin-top:4px;}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px;margin-bottom:32px;}
+.stat-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;}
+.stat-card i{color:var(--accent);font-size:1.15rem;margin-bottom:10px;display:block;}
+.stat-card .n{font-family:var(--font-display);font-size:1.7rem;font-weight:700;}
+.stat-card .l{color:var(--text-dim);font-size:.82rem;margin-top:3px;}
+.recent-list{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:8px;}
+.recent-row{display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:10px;}
+.recent-row:hover{background:var(--bg-elevated);}
+.recent-thumb{width:52px;height:34px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;background:linear-gradient(135deg,#232936,#151A24);display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:.7rem;}
+.recent-row .t{font-weight:600;font-size:.88rem;}
+.recent-row .d{color:var(--text-dim);font-size:.76rem;}
+
+/* ---------- movies table ---------- */
+.toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;gap:12px;flex-wrap:wrap;}
+.search-box{display:flex;align-items:center;gap:8px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:9px 14px;flex:1;max-width:300px;}
+.search-box input{background:none;border:none;color:var(--text);width:100%;font-size:.86rem;}
+.search-box input:focus{outline:none;}
+.table-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;}
+table{width:100%;border-collapse:collapse;font-size:.87rem;}
+thead th{text-align:left;color:var(--text-dim);font-weight:600;font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;padding:14px 16px;border-bottom:1px solid var(--border);background:var(--bg-elevated);}
+tbody td{padding:13px 16px;border-bottom:1px solid var(--border-soft);vertical-align:middle;}
+tbody tr:last-child td{border-bottom:none;}
+tbody tr:hover{background:var(--bg-elevated);}
+.thumb-cell{display:flex;align-items:center;gap:12px;}
+.thumb-cell .thumb{width:56px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#232936,#151A24);color:var(--text-dim);font-size:.7rem;}
+.thumb-cell .title{font-weight:600;}
+.desc-cell{max-width:280px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pill{display:inline-flex;padding:4px 10px;border-radius:100px;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text-dim);font-size:.76rem;}
+.row-actions{display:flex;gap:8px;}
+.empty-row td{text-align:center;color:var(--text-dim);padding:60px 20px;}
+.empty-row i{font-size:1.8rem;color:var(--accent);display:block;margin-bottom:10px;}
+
+/* ---------- settings ---------- */
+.settings-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;max-width:520px;}
+.settings-row{display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid var(--border-soft);}
+.settings-row:last-child{border-bottom:none;}
+.settings-row .l{font-weight:600;font-size:.9rem;}
+.settings-row .d{color:var(--text-dim);font-size:.8rem;margin-top:2px;}
+
+/* ---------- modal ---------- */
+.modal-overlay{position:fixed;inset:0;background:rgba(4,6,10,.6);backdrop-filter:blur(3px);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px;}
+.modal-box{width:100%;max-width:560px;max-height:88vh;overflow-y:auto;background:var(--bg-elevated);border:1px solid var(--border);border-radius:20px;padding:28px;box-shadow:var(--shadow);}
+.modal-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;}
+.modal-top h2{font-family:var(--font-display);font-size:1.2rem;}
+.modal-top p{color:var(--text-dim);font-size:.84rem;margin-top:3px;}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+@media(max-width:480px){.two-col{grid-template-columns:1fr;}}
+.upload-box{border:1.5px dashed var(--border);border-radius:12px;padding:16px;text-align:center;font-size:.84rem;color:var(--text-dim);cursor:pointer;transition:border-color .15s;position:relative;}
+.upload-box:hover{border-color:var(--accent);}
+.upload-box input{display:none;}
+.seg-toggle{display:flex;gap:4px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:4px;margin-bottom:10px;}
+.seg-btn{flex:1;padding:8px 10px;border-radius:7px;font-size:.82rem;font-weight:600;color:var(--text-dim);transition:all .15s;}
+.seg-btn.active{background:var(--accent);color:#fff;}
+.upload-box .fname{color:var(--text);font-weight:600;margin-top:4px;font-size:.8rem;word-break:break-all;}
+.preview-thumb{width:100%;height:120px;border-radius:10px;background-size:cover;background-position:center;margin-bottom:10px;display:none;}
+.progress-track{height:6px;border-radius:6px;background:var(--bg-card);overflow:hidden;margin-top:10px;display:none;}
+.progress-fill{height:100%;background:var(--accent);width:0%;transition:width .15s ease;}
+.progress-label{font-size:.74rem;color:var(--text-dim);margin-top:4px;display:none;}
+
+/* ---------- toast ---------- */
+#toast-wrap{position:fixed;bottom:22px;right:22px;z-index:300;display:flex;flex-direction:column;gap:10px;}
+.toast{padding:12px 18px;border-radius:10px;font-size:.85rem;font-weight:600;box-shadow:var(--shadow);animation:tIn .2s ease;}
+@keyframes tIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+.toast.success{background:rgba(63,207,142,.14);color:var(--success);border:1px solid rgba(63,207,142,.35);}
+.toast.error{background:rgba(240,101,79,.14);color:var(--danger);border:1px solid rgba(240,101,79,.35);}
+.toast.info{background:rgba(91,141,239,.14);color:var(--accent);border:1px solid rgba(91,141,239,.35);}
+.spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:sp .6s linear infinite;display:inline-block;}
+@keyframes sp{to{transform:rotate(360deg);}}
+
+@media(max-width:820px){
+  .tabs .tab-label{display:none;}
+  .topbar-inner{gap:4px;}
+}
+</style>
+</head>
+<body>
+<div id="toast-wrap"></div>
+<div id="app"></div>
+
+<script>
+(function(){
+"use strict";
+
+/* =====================================================
+   HARD-CODED PROJECT CONFIG
+   Only the publishable key lives here — never the secret key.
+   Fill in SUPABASE_URL from Settings → API in your Supabase project.
+===================================================== */
+const SUPABASE_URL = "https://ukihakfkmixdaimfceql.supabase.co";
+const SUPABASE_KEY = "sb_publishable_Rm9AxC4l6ZJJk5MmfROi5A_Vb7XBv07";
+
+function $(sel, root){ return (root||document).querySelector(sel); }
+function el(html){ const d=document.createElement('div'); d.innerHTML=html.trim(); return d.firstElementChild; }
+function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function toast(msg, type){
+  type = type||'info';
+  const wrap = document.getElementById('toast-wrap');
+  const t = el(`<div class="toast ${type}">${escapeHtml(msg)}</div>`);
+  wrap.appendChild(t);
+  setTimeout(()=>{ t.style.opacity='0'; setTimeout(()=>t.remove(),200); }, 3400);
+}
+
+let supabase = null;
+let currentUser = null;
+let movies = [];
+let activeTab = 'dashboard';
+let searchQuery = '';
+
+const app = document.getElementById('app');
+
+/* =====================================================
+   LOGIN
+===================================================== */
+function renderLogin(){
+  app.innerHTML = '';
+  app.appendChild(el(`
+  <div class="center-screen">
+    <div class="auth-card">
+      <div class="logo">K</div>
+      <h1>Admin sign in</h1>
+      <p class="sub">Log in with the account you created in Supabase Authentication.</p>
+      <form id="loginForm" novalidate>
+        <div class="field" id="f-email"><label>Email</label><input id="loginEmail" type="email" autocomplete="email"><div class="field-error">Enter a valid email.</div></div>
+        <div class="field" id="f-pass"><label>Password</label><input id="loginPassword" type="password" autocomplete="current-password"><div class="field-error">Enter your password.</div></div>
+        <button class="btn btn-primary" id="loginBtn" type="submit" style="width:100%;justify-content:center;">Log in</button>
+      </form>
+    </div>
+  </div>`));
+
+  $('#loginForm').addEventListener('submit', async e=>{
+    e.preventDefault();
+    const email = $('#loginEmail').value.trim();
+    const pass = $('#loginPassword').value;
+    let ok = true;
+    const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    $('#f-email').classList.toggle('error', !validEmail); if(!validEmail) ok=false;
+    $('#f-pass').classList.toggle('error', pass.length<1); if(pass.length<1) ok=false;
+    if(!ok) return;
+    const btn = $('#loginBtn');
+    btn.innerHTML = '<span class="spinner"></span> Logging in…'; btn.disabled = true;
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
+    if(error){ toast(error.message || 'Login failed.','error'); btn.innerHTML='Log in'; btn.disabled=false; return; }
+    currentUser = data.user;
+    renderShell();
+  });
+}
+
+/* =====================================================
+   SHELL + TABS
+===================================================== */
+function renderShell(){
+  app.innerHTML = '';
+  app.appendChild(el(`
+  <div class="shell">
+    <div class="topbar">
+      <div class="topbar-inner">
+        <div class="brand"><span class="logo">K</span> KurdPirate Admin</div>
+        <div class="tabs">
+          <button class="tab-btn" data-tab="dashboard"><i class="fa-solid fa-gauge-high"></i><span class="tab-label">Dashboard</span></button>
+          <button class="tab-btn" data-tab="movies"><i class="fa-solid fa-clapperboard"></i><span class="tab-label">Movies</span></button>
+          <button class="tab-btn" data-tab="settings"><i class="fa-solid fa-gear"></i><span class="tab-label">Settings</span></button>
+        </div>
+        <div class="user-chip">
+          <span class="email">${escapeHtml(currentUser?.email||'')}</span>
+          <button class="btn-icon" id="logoutBtn" title="Log out"><i class="fa-solid fa-right-from-bracket"></i></button>
+        </div>
+      </div>
+    </div>
+    <div class="container" id="tabContent"></div>
+  </div>`));
+
+  app.querySelectorAll('.tab-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ activeTab = btn.dataset.tab; syncTabUI(); renderTab(); });
+  });
+  $('#logoutBtn').addEventListener('click', async ()=>{
+    await supabase.auth.signOut();
+    currentUser = null;
+    toast('Logged out','info');
+    renderLogin();
+  });
+
+  syncTabUI();
+  loadMovies();
+}
+function syncTabUI(){
+  app.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===activeTab));
+}
+
+async function loadMovies(){
+  const { data, error } = await supabase.from('movies').select('*').order('created_at', {ascending:false});
+  if(error){ toast('Could not load movies: '+error.message,'error'); movies = []; }
+  else movies = data || [];
+  renderTab();
+}
+
+function renderTab(){
+  if(activeTab==='dashboard') renderDashboard();
+  else if(activeTab==='movies') renderMoviesTab();
+  else renderSettingsTab();
+}
+
+/* ---------- dashboard ---------- */
+function renderDashboard(){
+  const c = document.getElementById('tabContent');
+  const genreCount = new Set(movies.flatMap(m=>(m.genre||'').split(',').map(s=>s.trim()).filter(Boolean))).size;
+  const recent = movies.slice(0,5);
+  c.innerHTML = `
+    <div class="page-head"><div><h1>Dashboard</h1><p>A quick look at your catalogue.</p></div></div>
+    <div class="stat-grid">
+      <div class="stat-card"><i class="fa-solid fa-clapperboard"></i><div class="n">${movies.length}</div><div class="l">Total movies</div></div>
+      <div class="stat-card"><i class="fa-solid fa-tags"></i><div class="n">${genreCount}</div><div class="l">Genres in use</div></div>
+      <div class="stat-card"><i class="fa-solid fa-video"></i><div class="n">${movies.filter(m=>m.video_url).length}</div><div class="l">With video uploaded</div></div>
+    </div>
+    <h3
